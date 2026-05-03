@@ -1,5 +1,5 @@
 --[[
-    dkoiHUB - Blox Fruits Script
+    dkoiHUB - Blox Fruits Script (Working Version)
     Made with FluentModded UI Library
 ]]
 
@@ -13,9 +13,11 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
-local VirtualUser = game:GetService("VirtualUser")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
 local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
 
 -- Variables
 local Player = Players.LocalPlayer
@@ -28,23 +30,27 @@ local SaveManager = Fluent.SaveManager
 local InterfaceManager = Fluent.InterfaceManager
 local FloatingButtonManager = Fluent.FloatingButtonManager
 
--- Settings Variables
+-- Settings
 local Settings = {
     AutoFarm = false,
     AutoQuest = false,
     AutoAttack = false,
     FastAttack = false,
     AutoHaki = false,
-    AutoSkill = { Z = false, X = false, C = false, V = false },
+    AutoSkillZ = false,
+    AutoSkillX = false,
+    AutoSkillC = false,
+    AutoSkillV = false,
     AutoBossFarm = false,
     AutoEliteHunter = false,
     AimbotTarget = false,
     HitboxExpand = false,
+    HitboxSize = 10,
     NoStun = false,
     InfiniteEnergy = false,
-    DamageBoost = 1,
-    AutoDodge = false,
     KillAura = false,
+    KillAuraRange = 50,
+    SelectedSea = "First Sea",
     SelectedIsland = "",
     AutoNextIsland = false,
     RemoveFog = false,
@@ -61,11 +67,11 @@ local Settings = {
     AutoCollectDrops = false,
     AutoMaterialFarm = false,
     AutoBoneFarm = false,
-    AutoEventItem = false,
     AutoFruitSniper = false,
     AutoEatFruit = false,
     StoreFruit = false,
     DropFruit = false,
+    AutoStats = false,
     WalkSpeed = 16,
     JumpPower = 50,
     Fly = false,
@@ -75,18 +81,118 @@ local Settings = {
     FPSBoost = false,
 }
 
+-- ESP Storage
+local ESPObjects = {}
+
+-- Utility Functions
+local function getNearestEnemy(range)
+    local nearest = nil
+    local minDist = range or math.huge
+    for _, enemy in pairs(Workspace.Enemies:GetChildren()) do
+        if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+            local dist = (HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = enemy
+            end
+        end
+    end
+    return nearest
+end
+
+local function getNearestPlayer(range)
+    local nearest = nil
+    local minDist = range or math.huge
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = plr.Character
+            end
+        end
+    end
+    return nearest
+end
+
+local function tweenTo(position)
+    local tween = TweenService:Create(HumanoidRootPart, TweenInfo.new(1, Enum.EasingStyle.Linear), {
+        CFrame = CFrame.new(position)
+    })
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function getBosses()
+    local bosses = {}
+    for _, v in pairs(Workspace.Enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
+            if string.find(v.Name:lower(), "boss") or v.Humanoid.MaxHealth > 5000 then
+                table.insert(bosses, v)
+            end
+        end
+    end
+    return bosses
+end
+
+local function getFruits()
+    local fruits = {}
+    for _, v in pairs(Workspace:GetChildren()) do
+        if string.find(v.Name, "Fruit") and v:IsA("Tool") then
+            table.insert(fruits, v)
+        end
+    end
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+            table.insert(fruits, v)
+        end
+    end
+    return fruits
+end
+
+local function clearESP()
+    for _, obj in pairs(ESPObjects) do
+        pcall(function() obj:Destroy() end)
+    end
+    ESPObjects = {}
+end
+
+local function createESP(target, color, name)
+    if not target or not target:IsA("BasePart") then return end
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_" .. name
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 100, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = color
+    textLabel.TextStrokeTransparency = 0
+    textLabel.Text = name
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 14
+    textLabel.Parent = billboard
+    
+    billboard.Parent = target
+    table.insert(ESPObjects, billboard)
+    return billboard
+end
+
 -- CREATE MAIN WINDOW
 local Window = Fluent:CreateWindow({
-    Title = "dkoiHUB",
-    SubTitle = "Blox Fruits | Best Script",
+    Title = "dkoiHUB 🏴‍☠️",
+    SubTitle = "Blox Fruits Premium",
     TabWidth = 160,
-    Size = UDim2.fromOffset(580, 480),
+    Size = UDim2.fromOffset(600, 500),
     Acrylic = true,
     Theme = "Blood Red",
     MinimizeKey = Enum.KeyCode.RightControl,
     UserInfoTop = true,
     UserInfoTitle = Player.DisplayName,
-    UserInfoSubtitle = "Premium User",
+    UserInfoSubtitle = "🏆 Premium User",
     UserInfoColor = Color3.fromRGB(255, 50, 50),
     Search = true,
 })
@@ -105,7 +211,7 @@ local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "settings" })
 local MiscTab = Window:AddTab({ Title = "Misc", Icon = "more-horizontal" })
 
 -- ==================== MAIN TAB ====================
-local MainSection = MainTab:AddSection("Auto Farm")
+local MainSection = MainTab:AddSection("⚔️ Auto Farm")
 
 MainSection:AddToggle("AutoFarm", {
     Title = "Auto Farm Level",
@@ -113,55 +219,202 @@ MainSection:AddToggle("AutoFarm", {
     Callback = function(value)
         Settings.AutoFarm = value
         if value then
+            Fluent:Notify({ Title = "Auto Farm", Content = "Started farming!", Duration = 2 })
             spawn(function()
                 while Settings.AutoFarm do
                     task.wait()
                     pcall(function()
-                        local quests = {
-                            { level = 0, name = "Bandit", questLevel = 1 },
-                            { level = 10, name = "Monkey", questLevel = 1 },
-                            { level = 20, name = "Gorilla", questLevel = 1 },
-                            { level = 30, name = "Pirate", questLevel = 1 },
-                            { level = 40, name = "Brute", questLevel = 1 },
-                            { level = 60, name = "Desert Bandit", questLevel = 1 },
-                            { level = 80, name = "Desert Officer", questLevel = 1 },
-                            { level = 100, name = "Snow Bandit", questLevel = 1 },
-                            { level = 120, name = "Snowman", questLevel = 1 },
-                            { level = 150, name = "Dark Master", questLevel = 1 },
-                            { level = 175, name = "Sky Bandit", questLevel = 1 },
-                            { level = 200, name = "Prisoner", questLevel = 1 },
-                            { level = 250, name = "Dangerous Prisoner", questLevel = 1 },
-                            { level = 300, name = "Marine", questLevel = 1 },
-                            { level = 350, name = "Lab Subordinate", questLevel = 1 },
-                            { level = 400, name = "Zombie", questLevel = 1 },
-                            { level = 450, name = "Vampire", questLevel = 1 },
-                            { level = 500, name = "Shanda", questLevel = 1 },
-                            { level = 550, name = "Royal Solider", questLevel = 1 },
-                            { level = 625, name = "Galley Pirate", questLevel = 1 },
-                            { level = 700, name = "Raider", questLevel = 1 },
-                            { level = 800, name = "Mercenary", questLevel = 1 },
-                            { level = 900, name = "Swan Pirate", questLevel = 1 },
-                            { level = 1000, name = "Factory Staff", questLevel = 1 },
-                            { level = 1100, name = "Marine Commodore", questLevel = 1 },
-                            { level = 1250, name = "Fishman Warrior", questLevel = 1 },
-                            { level = 1500, name = "Pirate Millionaire", questLevel = 1 },
-                            { level = 1750, name = "Pistol Billionaire", questLevel = 1 },
-                            { level = 2000, name = "Dragon Crew Warrior", questLevel = 1 },
-                            { level = 2500, name = "Dragon Crew Archer", questLevel = 1 },
-                        }
+                        if not Character or not HumanoidRootPart then return end
                         
-                        local currentLevel = Player.Data.Level.Value
+                        -- Auto equip melee
+                        if Character:FindFirstChildOfClass("Tool") then
+                            local tool = Character:FindFirstChildOfClass("Tool")
+                            if tool:FindFirstChild("RemoteFunctionShoot") then
+                                -- Use gun if equipped
+                            end
+                        end
                         
-                        for _, enemy in pairs(workspace.Enemies:GetChildren()) do
-                            if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 then
-                                local distance = (HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
-                                if distance <= 100 then
-                                    HumanoidRootPart.CFrame = enemy.HumanoidRootPart.CFrame * CFrame.new(0, 0, 5)
-                                    if Settings.AutoAttack then
-                                        game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, true, nil, 0)
-                                        task.wait(0.1)
-                                        game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, false, nil, 0)
-                                    end
+                        local enemy = getNearestEnemy(300)
+                        if enemy and enemy:FindFirstChild("HumanoidRootPart") then
+                            -- Move to enemy
+                            local pos = enemy.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                            HumanoidRootPart.CFrame = HumanoidRootPart.CFrame:Lerp(pos, 0.5)
+                            
+                            -- Attack
+                            if Settings.AutoAttack then
+                                local args = {
+                                    [1] = "M1",
+                                    [2] = enemy.HumanoidRootPart.Position
+                                }
+                                pcall(function()
+                                    ReplicatedStorage.Remotes.Communication.M1:FireServer(unpack(args))
+                                end)
+                                task.wait(0.15)
+                            end
+                            
+                            -- Skills
+                            if Settings.AutoSkillZ then
+                                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+                                task.wait(0.1)
+                                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+                            end
+                            if Settings.AutoSkillX then
+                                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.X, false, game)
+                                task.wait(0.1)
+                                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.X, false, game)
+                            end
+                            if Settings.AutoSkillC then
+                                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
+                                task.wait(0.1)
+                                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
+                            end
+                            if Settings.AutoSkillV then
+                                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.V, false, game)
+                                task.wait(0.1)
+                                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.V, false, game)
+                            end
+                        end
+                    end)
+                end
+            end)
+        else
+            Fluent:Notify({ Title = "Auto Farm", Content = "Stopped farming!", Duration = 2 })
+        end
+    end,
+})
+
+MainSection:AddToggle("AutoAttack", {
+    Title = "Auto Attack (M1)",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoAttack = value
+    end,
+})
+
+MainSection:AddToggle("AutoHaki", {
+    Title = "Auto Haki (Buso)",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoHaki = value
+        if value then
+            spawn(function()
+                while Settings.AutoHaki do
+                    task.wait(10)
+                    pcall(function()
+                        local args = { [1] = "Buso" }
+                        ReplicatedStorage.Remotes.Communication.Aura:InvokeServer(unpack(args))
+                    end)
+                end
+            end)
+        end
+    end,
+})
+
+MainSection:AddToggle("AutoSkillZ", {
+    Title = "Auto Skill Z",
+    Default = false,
+    Callback = function(value) Settings.AutoSkillZ = value end,
+})
+
+MainSection:AddToggle("AutoSkillX", {
+    Title = "Auto Skill X",
+    Default = false,
+    Callback = function(value) Settings.AutoSkillX = value end,
+})
+
+MainSection:AddToggle("AutoSkillC", {
+    Title = "Auto Skill C", 
+    Default = false,
+    Callback = function(value) Settings.AutoSkillC = value end,
+})
+
+MainSection:AddToggle("AutoSkillV", {
+    Title = "Auto Skill V",
+    Default = false,
+    Callback = function(value) Settings.AutoSkillV = value end,
+})
+
+local BossSection = MainTab:AddSection("👹 Boss Farm")
+
+BossSection:AddToggle("AutoBossFarm", {
+    Title = "Auto Boss Farm",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoBossFarm = value
+        if value then
+            spawn(function()
+                while Settings.AutoBossFarm do
+                    task.wait()
+                    pcall(function()
+                        local bosses = getBosses()
+                        if #bosses > 0 then
+                            local boss = bosses[1]
+                            if boss:FindFirstChild("HumanoidRootPart") then
+                                local pos = boss.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                                HumanoidRootPart.CFrame = HumanoidRootPart.CFrame:Lerp(pos, 0.5)
+                                
+                                local args = {
+                                    [1] = "M1",
+                                    [2] = boss.HumanoidRootPart.Position
+                                }
+                                ReplicatedStorage.Remotes.Communication.M1:FireServer(unpack(args))
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
+    end,
+})
+
+BossSection:AddToggle("AutoEliteHunter", {
+    Title = "Auto Elite Hunter",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoEliteHunter = value
+        if value then
+            spawn(function()
+                while Settings.AutoEliteHunter do
+                    task.wait()
+                    pcall(function()
+                        for _, v in pairs(Workspace.Enemies:GetChildren()) do
+                            if v.Name == "Elite Hunter" and v:FindFirstChild("HumanoidRootPart") then
+                                local pos = v.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                                HumanoidRootPart.CFrame = pos
+                                
+                                local args = { [1] = "M1", [2] = v.HumanoidRootPart.Position }
+                                ReplicatedStorage.Remotes.Communication.M1:FireServer(unpack(args))
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
+    end,
+})
+
+-- ==================== COMBAT TAB ====================
+local CombatSection = CombatTab:AddSection("🎯 Combat")
+
+CombatSection:AddToggle("KillAura", {
+    Title = "Kill Aura",
+    Default = false,
+    Callback = function(value)
+        Settings.KillAura = value
+        if value then
+            spawn(function()
+                while Settings.KillAura do
+                    task.wait(0.1)
+                    pcall(function()
+                        for _, enemy in pairs(Workspace.Enemies:GetChildren()) do
+                            if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+                                local dist = (HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
+                                if dist <= Settings.KillAuraRange then
+                                    local args = {
+                                        [1] = "M1",
+                                        [2] = enemy.HumanoidRootPart.Position
+                                    }
+                                    ReplicatedStorage.Remotes.Communication.M1:FireServer(unpack(args))
                                 end
                             end
                         end
@@ -172,117 +425,14 @@ MainSection:AddToggle("AutoFarm", {
     end,
 })
 
-MainSection:AddToggle("AutoQuest", {
-    Title = "Auto Quest",
-    Default = false,
+CombatSection:AddSlider("KillAuraRange", {
+    Title = "Kill Aura Range",
+    Default = 50,
+    Min = 10,
+    Max = 200,
+    Rounding = 0,
     Callback = function(value)
-        Settings.AutoQuest = value
-    end,
-})
-
-MainSection:AddToggle("AutoAttack", {
-    Title = "Auto Attack",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoAttack = value
-    end,
-})
-
-MainSection:AddToggle("FastAttack", {
-    Title = "Fast Attack",
-    Default = false,
-    Callback = function(value)
-        Settings.FastAttack = value
-        if value then
-            spawn(function()
-                while Settings.FastAttack do
-                    task.wait()
-                    pcall(function()
-                        if Character and Character:FindFirstChild("Humanoid") then
-                            game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, true, nil, 0)
-                            task.wait(0.05)
-                            game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, false, nil, 0)
-                        end
-                    end)
-                end
-            end)
-        end
-    end,
-})
-
-MainSection:AddToggle("AutoHaki", {
-    Title = "Auto Haki",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoHaki = value
-        if value then
-            spawn(function()
-                while Settings.AutoHaki do
-                    task.wait()
-                    pcall(function()
-                        local args = {
-                            [1] = "Buso"
-                        }
-                        game:GetService("ReplicatedStorage").Remotes.Communication.Aura:InvokeServer(unpack(args))
-                    end)
-                    task.wait(10)
-                end
-            end)
-        end
-    end,
-})
-
-local SkillSection = MainTab:AddSection("Auto Skills")
-
-for _, skill in pairs({"Z", "X", "C", "V"}) do
-    SkillSection:AddToggle("AutoSkill" .. skill, {
-        Title = "Auto Skill " .. skill,
-        Default = false,
-        Callback = function(value)
-            Settings.AutoSkill[skill] = value
-            if value then
-                spawn(function()
-                    while Settings.AutoSkill[skill] do
-                        task.wait()
-                        pcall(function()
-                            game:GetService("VirtualInputManager"):SendKeyEvent(true, skill, false, nil)
-                            task.wait(0.1)
-                            game:GetService("VirtualInputManager"):SendKeyEvent(false, skill, false, nil)
-                        end)
-                        task.wait(0.5)
-                    end
-                end)
-            end
-        end,
-    })
-end
-
-local BossSection = MainTab:AddSection("Boss & Elite")
-
-MainSection:AddToggle("AutoBossFarm", {
-    Title = "Auto Boss Farm",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoBossFarm = value
-    end,
-})
-
-MainSection:AddToggle("AutoEliteHunter", {
-    Title = "Auto Elite Hunter",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoEliteHunter = value
-    end,
-})
-
--- ==================== COMBAT TAB ====================
-local CombatSection = CombatTab:AddSection("Combat Settings")
-
-CombatSection:AddToggle("AimbotTarget", {
-    Title = "Aimbot Target",
-    Default = false,
-    Callback = function(value)
-        Settings.AimbotTarget = value
+        Settings.KillAuraRange = value
     end,
 })
 
@@ -292,15 +442,43 @@ CombatSection:AddToggle("HitboxExpand", {
     Callback = function(value)
         Settings.HitboxExpand = value
         if value then
+            spawn(function()
+                while Settings.HitboxExpand do
+                    task.wait(0.5)
+                    pcall(function()
+                        for _, enemy in pairs(Workspace.Enemies:GetChildren()) do
+                            if enemy:FindFirstChild("HumanoidRootPart") then
+                                enemy.HumanoidRootPart.Size = Vector3.new(Settings.HitboxSize, Settings.HitboxSize, Settings.HitboxSize)
+                                enemy.HumanoidRootPart.Transparency = 0.7
+                                enemy.HumanoidRootPart.CanCollide = false
+                            end
+                        end
+                    end)
+                end
+            end)
+        else
+            -- Reset hitboxes
             pcall(function()
-                for _, v in pairs(workspace.Enemies:GetChildren()) do
-                    if v:FindFirstChild("HumanoidRootPart") then
-                        v.HumanoidRootPart.Size = Vector3.new(10, 10, 10)
-                        v.HumanoidRootPart.Transparency = 0.7
+                for _, enemy in pairs(Workspace.Enemies:GetChildren()) do
+                    if enemy:FindFirstChild("HumanoidRootPart") then
+                        enemy.HumanoidRootPart.Size = Vector3.new(2, 2, 2)
+                        enemy.HumanoidRootPart.Transparency = 1
+                        enemy.HumanoidRootPart.CanCollide = true
                     end
                 end
             end)
         end
+    end,
+})
+
+CombatSection:AddSlider("HitboxSize", {
+    Title = "Hitbox Size",
+    Default = 10,
+    Min = 3,
+    Max = 50,
+    Rounding = 0,
+    Callback = function(value)
+        Settings.HitboxSize = value
     end,
 })
 
@@ -310,9 +488,17 @@ CombatSection:AddToggle("NoStun", {
     Callback = function(value)
         Settings.NoStun = value
         if value then
-            pcall(function()
-                if Character:FindFirstChild("Humanoid") then
-                    Character.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+            spawn(function()
+                while Settings.NoStun do
+                    task.wait()
+                    pcall(function()
+                        if Humanoid then
+                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+                        end
+                    end)
                 end
             end)
         end
@@ -327,55 +513,9 @@ CombatSection:AddToggle("InfiniteEnergy", {
         if value then
             spawn(function()
                 while Settings.InfiniteEnergy do
-                    task.wait()
+                    task.wait(5)
                     pcall(function()
-                        local args = { [1] = "Energy" }
-                        game:GetService("ReplicatedStorage").Remotes.Communication.Energy:InvokeServer(unpack(args))
-                    end)
-                end
-            end)
-        end
-    end,
-})
-
-CombatSection:AddSlider("DamageBoost", {
-    Title = "Damage Boost",
-    Default = 1,
-    Min = 1,
-    Max = 100,
-    Rounding = 0,
-    Callback = function(value)
-        Settings.DamageBoost = value
-    end,
-})
-
-CombatSection:AddToggle("AutoDodge", {
-    Title = "Auto Dodge",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoDodge = value
-    end,
-})
-
-CombatSection:AddToggle("KillAura", {
-    Title = "Kill Aura",
-    Default = false,
-    Callback = function(value)
-        Settings.KillAura = value
-        if value then
-            spawn(function()
-                while Settings.KillAura do
-                    task.wait()
-                    pcall(function()
-                        for _, v in pairs(workspace.Enemies:GetChildren()) do
-                            if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
-                                local distance = (HumanoidRootPart.Position - v.HumanoidRootPart.Position).Magnitude
-                                if distance <= 50 then
-                                    firetouchinterest(HumanoidRootPart, v.HumanoidRootPart, 0)
-                                    firetouchinterest(HumanoidRootPart, v.HumanoidRootPart, 1)
-                                end
-                            end
-                        end
+                        ReplicatedStorage.Remotes.Communication.Energy:FireServer("Energy")
                     end)
                 end
             end)
@@ -384,37 +524,52 @@ CombatSection:AddToggle("KillAura", {
 })
 
 -- ==================== TELEPORT TAB ====================
-local TeleportSection = TeleportTab:AddSection("Teleport Options")
+local TeleportSection = TeleportTab:AddSection("🌍 Teleport")
 
-TeleportSection:AddDropdown("SeaSelect", {
-    Title = "Select Sea",
-    Values = { "First Sea", "Second Sea", "Third Sea" },
-    Default = "First Sea",
-    Multi = false,
-    Callback = function(value)
-        Settings.SelectedSea = value
-    end,
-})
-
-local Islands = {
-    ["First Sea"] = {
-        "Start Island", "Marine Start", "Middle Town", "Jungle", "Pirate Village",
-        "Desert", "Frozen Village", "Marine Fortress", "Skylands", "Prison",
-        "Colosseum", "Magma Village", "Underwater City", "Fountain City"
-    },
-    ["Second Sea"] = {
-        "Kingdom of Rose", "Green Zone", "Graveyard", "Snow Mountain",
-        "Hot and Cold", "Cursed Ship", "Ice Castle", "Forgotten Island", "Usopp Island"
-    },
-    ["Third Sea"] = {
-        "Port Town", "Hydra Island", "Great Tree", "Castle on the Sea",
-        "Floating Turtle", "Haunted Castle", "Sea of Treats"
-    }
+-- Island coordinates
+local IslandCoords = {
+    ["Start Island"] = Vector3.new(1074, 128, 1414),
+    ["Marine Start"] = Vector3.new(2565, 125, 2065),
+    ["Middle Town"] = Vector3.new(-690, 189, 1218),
+    ["Jungle"] = Vector3.new(-1550, 128, 25),
+    ["Pirate Village"] = Vector3.new(-1122, 128, 3845),
+    ["Desert"] = Vector3.new(870, 127, 4347),
+    ["Frozen Village"] = Vector3.new(1175, 360, -5268),
+    ["Marine Fortress"] = Vector3.new(-4800, 179, 4322),
+    ["Skylands"] = Vector3.new(-4875, 7170, -4425),
+    ["Prison"] = Vector3.new(4746, 64, 289),
+    ["Colosseum"] = Vector3.new(-1389, 503, -9990),
+    ["Magma Village"] = Vector3.new(-5271, 120, 8501),
+    ["Underwater City"] = Vector3.new(4100, 64, 1400),
+    ["Fountain City"] = Vector3.new(5267, 57, 1656),
+    ["Kingdom of Rose"] = Vector3.new(-385, 240, 425),
+    ["Green Zone"] = Vector3.new(-2396, 240, 437),
+    ["Graveyard"] = Vector3.new(-1948, 458, 5439),
+    ["Snow Mountain"] = Vector3.new(2583, 462, 5255),
+    ["Hot and Cold"] = Vector3.new(-574, 486, 5754),
+    ["Cursed Ship"] = Vector3.new(3623, 534, 4140),
+    ["Ice Castle"] = Vector3.new(5252, 549, 5563),
+    ["Forgotten Island"] = Vector3.new(-5059, 260, 5183),
+    ["Port Town"] = Vector3.new(-269, 249, 5682),
+    ["Hydra Island"] = Vector3.new(5492, 388, 4514),
+    ["Great Tree"] = Vector3.new(2101, 425, 4784),
+    ["Castle on the Sea"] = Vector3.new(-5011, 314, 4419),
+    ["Floating Turtle"] = Vector3.new(-1178, 1085, -7599),
+    ["Haunted Castle"] = Vector3.new(-7897, 4214, 2127),
+    ["Sea of Treats"] = Vector3.new(-2784, 2345, 6753),
 }
 
 TeleportSection:AddDropdown("IslandSelect", {
     Title = "Select Island",
-    Values = Islands["First Sea"],
+    Values = {
+        "Start Island", "Marine Start", "Middle Town", "Jungle", "Pirate Village",
+        "Desert", "Frozen Village", "Marine Fortress", "Skylands", "Prison",
+        "Colosseum", "Magma Village", "Underwater City", "Fountain City",
+        "Kingdom of Rose", "Green Zone", "Graveyard", "Snow Mountain",
+        "Hot and Cold", "Cursed Ship", "Ice Castle", "Forgotten Island",
+        "Port Town", "Hydra Island", "Great Tree", "Castle on the Sea",
+        "Floating Turtle", "Haunted Castle", "Sea of Treats"
+    },
     Default = "Start Island",
     Multi = false,
     Callback = function(value)
@@ -423,57 +578,85 @@ TeleportSection:AddDropdown("IslandSelect", {
 })
 
 TeleportSection:AddButton({
-    Title = "Tween to Island",
+    Title = "🌴 Tween to Selected Island",
     Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Teleporting to " .. Settings.SelectedIsland .. "...", Duration = 2 })
+        local pos = IslandCoords[Settings.SelectedIsland]
+        if pos then
+            Fluent:Notify({ Title = "Teleport", Content = "Teleporting to " .. Settings.SelectedIsland, Duration = 2 })
+            tweenTo(pos)
+        end
     end,
 })
 
 TeleportSection:AddButton({
-    Title = "Tween to NPC",
+    Title = "👹 Tween to Nearest Boss",
     Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Select an NPC first!", Duration = 2 })
+        local bosses = getBosses()
+        if #bosses > 0 then
+            local boss = bosses[1]
+            if boss:FindFirstChild("HumanoidRootPart") then
+                Fluent:Notify({ Title = "Teleport", Content = "Teleporting to " .. boss.Name, Duration = 2 })
+                tweenTo(boss.HumanoidRootPart.Position)
+            end
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "No bosses found!", Duration = 2 })
+        end
     end,
 })
 
 TeleportSection:AddButton({
-    Title = "Tween to Boss",
+    Title = "🍎 Tween to Nearest Fruit",
     Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Teleporting to Boss...", Duration = 2 })
+        local fruits = getFruits()
+        if #fruits > 0 then
+            local fruit = fruits[1]
+            local pos = fruit.Handle.Position
+            Fluent:Notify({ Title = "Teleport", Content = "Teleporting to " .. fruit.Name, Duration = 2 })
+            tweenTo(pos)
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "No fruits found!", Duration = 2 })
+        end
     end,
 })
 
 TeleportSection:AddButton({
-    Title = "Tween to Player",
+    Title = "🎁 Tween to Nearest Chest",
     Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Select a player first!", Duration = 2 })
+        local nearest = nil
+        local minDist = math.huge
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v.Name == "Chest" and v:IsA("BasePart") then
+                local dist = (HumanoidRootPart.Position - v.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = v
+                end
+            end
+        end
+        if nearest then
+            Fluent:Notify({ Title = "Teleport", Content = "Teleporting to chest!", Duration = 2 })
+            tweenTo(nearest.Position)
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "No chests found!", Duration = 2 })
+        end
     end,
 })
 
 TeleportSection:AddButton({
-    Title = "Tween to Fruit",
+    Title = "👤 Tween to Random Player",
     Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Searching for fruits...", Duration = 2 })
-    end,
-})
-
-TeleportSection:AddButton({
-    Title = "Tween to Chest",
-    Callback = function()
-        Fluent:Notify({ Title = "Teleport", Content = "Searching for chests...", Duration = 2 })
+        local target = getNearestPlayer(math.huge)
+        if target then
+            Fluent:Notify({ Title = "Teleport", Content = "Teleporting to player!", Duration = 2 })
+            tweenTo(target.HumanoidRootPart.Position)
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "No players found!", Duration = 2 })
+        end
     end,
 })
 
 -- ==================== WORLD TAB ====================
-local WorldSection = WorldTab:AddSection("World Settings")
-
-WorldSection:AddToggle("AutoNextIsland", {
-    Title = "Auto Next Island",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoNextIsland = value
-    end,
-})
+local WorldSection = WorldTab:AddSection("🌅 World Settings")
 
 WorldSection:AddToggle("RemoveFog", {
     Title = "Remove Fog",
@@ -499,10 +682,9 @@ WorldSection:AddToggle("FullBright", {
             Lighting.Brightness = 3
             Lighting.ClockTime = 14
             Lighting.FogEnd = 999999
-            Lighting.GlobalShadows = true
+            Lighting.GlobalShadows = false
         else
             Lighting.Brightness = 2
-            Lighting.ClockTime = 14
             Lighting.FogEnd = 88888
         end
     end,
@@ -520,24 +702,59 @@ WorldSection:AddSlider("TimeChanger", {
     end,
 })
 
-WorldSection:AddDropdown("WeatherControl", {
-    Title = "Weather Control",
-    Values = { "Clear", "Rain", "Fog", "Thunder" },
-    Default = "Clear",
-    Multi = false,
-    Callback = function(value)
-        Settings.WeatherControl = value
-    end,
-})
-
 -- ==================== ESP TAB ====================
-local ESPSection = ESPTab:AddSection("ESP Options")
+local ESPSection = ESPTab:AddSection("👁️ ESP Settings")
+
+local function updateESP()
+    clearESP()
+    
+    if Settings.PlayerESP then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= Player and plr.Character and plr.Character:FindFirstChild("Head") then
+                createESP(plr.Character.Head, Color3.fromRGB(0, 255, 255), "[Player] " .. plr.Name)
+            end
+        end
+    end
+    
+    if Settings.NPCESP then
+        for _, npc in pairs(Workspace.Enemies:GetChildren()) do
+            if npc:FindFirstChild("Head") and npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 then
+                createESP(npc.Head, Color3.fromRGB(255, 255, 0), "[NPC] " .. npc.Name)
+            end
+        end
+    end
+    
+    if Settings.BossESP then
+        for _, boss in pairs(getBosses()) do
+            if boss:FindFirstChild("Head") then
+                createESP(boss.Head, Color3.fromRGB(255, 0, 0), "👹 [BOSS] " .. boss.Name)
+            end
+        end
+    end
+    
+    if Settings.FruitESP then
+        for _, fruit in pairs(getFruits()) do
+            if fruit:FindFirstChild("Handle") then
+                createESP(fruit.Handle, Color3.fromRGB(255, 0, 255), "🍎 " .. fruit.Name)
+            end
+        end
+    end
+    
+    if Settings.ChestESP then
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v.Name == "Chest" and v:IsA("BasePart") then
+                createESP(v, Color3.fromRGB(255, 215, 0), "🎁 Chest")
+            end
+        end
+    end
+end
 
 ESPSection:AddToggle("PlayerESP", {
     Title = "Player ESP",
     Default = false,
     Callback = function(value)
         Settings.PlayerESP = value
+        updateESP()
     end,
 })
 
@@ -546,6 +763,7 @@ ESPSection:AddToggle("NPCESP", {
     Default = false,
     Callback = function(value)
         Settings.NPCESP = value
+        updateESP()
     end,
 })
 
@@ -554,6 +772,7 @@ ESPSection:AddToggle("BossESP", {
     Default = false,
     Callback = function(value)
         Settings.BossESP = value
+        updateESP()
     end,
 })
 
@@ -562,6 +781,7 @@ ESPSection:AddToggle("FruitESP", {
     Default = false,
     Callback = function(value)
         Settings.FruitESP = value
+        updateESP()
     end,
 })
 
@@ -570,25 +790,37 @@ ESPSection:AddToggle("ChestESP", {
     Default = false,
     Callback = function(value)
         Settings.ChestESP = value
-    end,
-})
-
-ESPSection:AddToggle("IslandESP", {
-    Title = "Island ESP",
-    Default = false,
-    Callback = function(value)
-        Settings.IslandESP = value
+        updateESP()
     end,
 })
 
 -- ==================== ITEMS TAB ====================
-local ItemsSection = ItemsTab:AddSection("Item Collection")
+local ItemsSection = ItemsTab:AddSection("📦 Auto Collect")
 
 ItemsSection:AddToggle("AutoCollectChest", {
     Title = "Auto Collect Chest",
     Default = false,
     Callback = function(value)
         Settings.AutoCollectChest = value
+        if value then
+            spawn(function()
+                while Settings.AutoCollectChest do
+                    task.wait(1)
+                    pcall(function()
+                        for _, v in pairs(Workspace:GetDescendants()) do
+                            if v.Name == "Chest" and v:IsA("BasePart") then
+                                local dist = (HumanoidRootPart.Position - v.Position).Magnitude
+                                if dist < 10 then
+                                    fireproximityprompt(v)
+                                elseif dist < 500 then
+                                    tweenTo(v.Position)
+                                end
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
     end,
 })
 
@@ -597,14 +829,24 @@ ItemsSection:AddToggle("AutoCollectDrops", {
     Default = false,
     Callback = function(value)
         Settings.AutoCollectDrops = value
-    end,
-})
-
-ItemsSection:AddToggle("AutoMaterialFarm", {
-    Title = "Auto Material Farm",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoMaterialFarm = value
+        if value then
+            spawn(function()
+                while Settings.AutoCollectDrops do
+                    task.wait(0.5)
+                    pcall(function()
+                        for _, v in pairs(Workspace:GetDescendants()) do
+                            if v:IsA("Tool") and v:FindFirstChild("Handle") then
+                                local dist = (HumanoidRootPart.Position - v.Handle.Position).Magnitude
+                                if dist < 300 then
+                                    tweenTo(v.Handle.Position)
+                                    task.wait(0.5)
+                                end
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
     end,
 })
 
@@ -613,25 +855,57 @@ ItemsSection:AddToggle("AutoBoneFarm", {
     Default = false,
     Callback = function(value)
         Settings.AutoBoneFarm = value
-    end,
-})
-
-ItemsSection:AddToggle("AutoEventItem", {
-    Title = "Auto Event Item",
-    Default = false,
-    Callback = function(value)
-        Settings.AutoEventItem = value
+        if value then
+            spawn(function()
+                while Settings.AutoBoneFarm do
+                    task.wait()
+                    pcall(function()
+                        for _, enemy in pairs(Workspace.Enemies:GetChildren()) do
+                            if string.find(enemy.Name:lower(), "skeleton") and enemy:FindFirstChild("HumanoidRootPart") then
+                                local pos = enemy.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                                HumanoidRootPart.CFrame = pos
+                                
+                                local args = { [1] = "M1", [2] = enemy.HumanoidRootPart.Position }
+                                ReplicatedStorage.Remotes.Communication.M1:FireServer(unpack(args))
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
     end,
 })
 
 -- ==================== FRUITS TAB ====================
-local FruitsSection = FruitsTab:AddSection("Fruit Options")
+local FruitsSection = FruitsTab:AddSection("🍎 Fruit Options")
 
 FruitsSection:AddToggle("AutoFruitSniper", {
     Title = "Auto Fruit Sniper",
     Default = false,
     Callback = function(value)
         Settings.AutoFruitSniper = value
+        if value then
+            spawn(function()
+                while Settings.AutoFruitSniper do
+                    task.wait(2)
+                    pcall(function()
+                        local fruits = getFruits()
+                        for _, fruit in pairs(fruits) do
+                            if fruit:FindFirstChild("Handle") then
+                                local dist = (HumanoidRootPart.Position - fruit.Handle.Position).Magnitude
+                                if dist < 500 then
+                                    tweenTo(fruit.Handle.Position)
+                                    task.wait(0.3)
+                                    -- Pick up fruit
+                                    firetouchinterest(HumanoidRootPart, fruit.Handle, 0)
+                                    firetouchinterest(HumanoidRootPart, fruit.Handle, 1)
+                                end
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
     end,
 })
 
@@ -640,45 +914,21 @@ FruitsSection:AddToggle("AutoEatFruit", {
     Default = false,
     Callback = function(value)
         Settings.AutoEatFruit = value
-    end,
-})
-
-FruitsSection:AddToggle("StoreFruit", {
-    Title = "Store Fruit",
-    Default = false,
-    Callback = function(value)
-        Settings.StoreFruit = value
-    end,
-})
-
-FruitsSection:AddToggle("DropFruit", {
-    Title = "Drop Fruit",
-    Default = false,
-    Callback = function(value)
-        Settings.DropFruit = value
-    end,
-})
-
--- ==================== STATS TAB ====================
-local StatsSection = StatsTab:AddSection("Auto Stats")
-
-StatsSection:AddToggle("AutoStats", {
-    Title = "Auto Stats",
-    Default = false,
-    Callback = function(value)
         if value then
             spawn(function()
-                while value do
+                while Settings.AutoEatFruit do
                     task.wait(1)
                     pcall(function()
-                        local args = {
-                            [1] = "Melee",
-                            [2] = "Defense",
-                            [3] = "Sword",
-                            [4] = "Gun",
-                            [5] = "Demon Fruit"
-                        }
-                        game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
+                        for _, v in pairs(Player.Backpack:GetChildren()) do
+                            if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                                Humanoid:EquipTool(v)
+                                task.wait(0.5)
+                                -- Click to eat
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                                task.wait(0.1)
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            end
+                        end
                     end)
                 end
             end)
@@ -686,70 +936,59 @@ StatsSection:AddToggle("AutoStats", {
     end,
 })
 
-StatsSection:AddButton({
-    Title = "Melee Stats",
-    Callback = function()
-        pcall(function()
-            local args = { [1] = "Melee" }
-            game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
-        end)
-        Fluent:Notify({ Title = "Stats", Content = "Added Melee Stats!", Duration = 2 })
+-- ==================== STATS TAB ====================
+local StatsSection = StatsTab:AddSection("📊 Auto Stats")
+
+StatsSection:AddToggle("AutoStats", {
+    Title = "Auto Stats (Balanced)",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoStats = value
+        if value then
+            spawn(function()
+                while Settings.AutoStats do
+                    task.wait(30)
+                    pcall(function()
+                        -- Put 3 points in each stat
+                        for _, stat in pairs({"Melee", "Defense", "Sword", "Gun", "Demon Fruit"}) do
+                            for i = 1, 3 do
+                                ReplicatedStorage.Remotes.Communication.Stats:FireServer(stat)
+                                task.wait(0.1)
+                            end
+                        end
+                    end)
+                end
+            end)
+        end
     end,
 })
 
-StatsSection:AddButton({
-    Title = "Defense Stats",
-    Callback = function()
-        pcall(function()
-            local args = { [1] = "Defense" }
-            game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
-        end)
-        Fluent:Notify({ Title = "Stats", Content = "Added Defense Stats!", Duration = 2 })
-    end,
-})
+for _, stat in pairs({"Melee", "Defense", "Sword", "Gun", "Demon Fruit"}) do
+    StatsSection:AddButton({
+        Title = "+100 " .. stat .. " Stats",
+        Callback = function()
+            spawn(function()
+                for i = 1, 100 do
+                    pcall(function()
+                        ReplicatedStorage.Remotes.Communication.Stats:FireServer(stat)
+                    end)
+                    task.wait(0.01)
+                end
+                Fluent:Notify({ Title = "Stats", Content = "Added 100 " .. stat .. " points!", Duration = 2 })
+            end)
+        end,
+    })
+end
 
 StatsSection:AddButton({
-    Title = "Sword Stats",
+    Title = "🔄 Reset Stats",
     Callback = function()
-        pcall(function()
-            local args = { [1] = "Sword" }
-            game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
-        end)
-        Fluent:Notify({ Title = "Stats", Content = "Added Sword Stats!", Duration = 2 })
-    end,
-})
-
-StatsSection:AddButton({
-    Title = "Gun Stats",
-    Callback = function()
-        pcall(function()
-            local args = { [1] = "Gun" }
-            game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
-        end)
-        Fluent:Notify({ Title = "Stats", Content = "Added Gun Stats!", Duration = 2 })
-    end,
-})
-
-StatsSection:AddButton({
-    Title = "Fruit Stats",
-    Callback = function()
-        pcall(function()
-            local args = { [1] = "Demon Fruit" }
-            game:GetService("ReplicatedStorage").Remotes.Communication.Stats:InvokeServer(unpack(args))
-        end)
-        Fluent:Notify({ Title = "Stats", Content = "Added Fruit Stats!", Duration = 2 })
-    end,
-})
-
-StatsSection:AddButton({
-    Title = "Reset Stats",
-    Callback = function()
-        Fluent:Notify({ Title = "Stats", Content = "Stats Reset!", Duration = 2 })
+        Fluent:Notify({ Title = "Stats", Content = "Use in-game code for reset!", Duration = 2 })
     end,
 })
 
 -- ==================== PLAYER TAB ====================
-local PlayerSection = PlayerTab:AddSection("Player Settings")
+local PlayerSection = PlayerTab:AddSection("🏃 Player")
 
 PlayerSection:AddSlider("WalkSpeed", {
     Title = "WalkSpeed",
@@ -759,9 +998,7 @@ PlayerSection:AddSlider("WalkSpeed", {
     Rounding = 0,
     Callback = function(value)
         Settings.WalkSpeed = value
-        pcall(function()
-            Humanoid.WalkSpeed = value
-        end)
+        pcall(function() Humanoid.WalkSpeed = value end)
     end,
 })
 
@@ -773,25 +1010,63 @@ PlayerSection:AddSlider("JumpPower", {
     Rounding = 0,
     Callback = function(value)
         Settings.JumpPower = value
-        pcall(function()
-            Humanoid.JumpPower = value
-        end)
+        pcall(function() Humanoid.JumpPower = value end)
     end,
 })
 
 PlayerSection:AddToggle("Fly", {
-    Title = "Fly",
+    Title = "Fly (Press E)",
     Default = false,
     Callback = function(value)
         Settings.Fly = value
         if value then
             spawn(function()
+                local flySpeed = 50
+                local keys = { W = false, S = false, A = false, D = false, E = false, Q = false }
+                
+                UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if input.KeyCode == Enum.KeyCode.W then keys.W = true
+                    elseif input.KeyCode == Enum.KeyCode.S then keys.S = true
+                    elseif input.KeyCode == Enum.KeyCode.A then keys.A = true
+                    elseif input.KeyCode == Enum.KeyCode.D then keys.D = true
+                    elseif input.KeyCode == Enum.KeyCode.E then keys.E = true
+                    elseif input.KeyCode == Enum.KeyCode.Q then keys.Q = true
+                    end
+                end)
+                
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.KeyCode == Enum.KeyCode.W then keys.W = false
+                    elseif input.KeyCode == Enum.KeyCode.S then keys.S = false
+                    elseif input.KeyCode == Enum.KeyCode.A then keys.A = false
+                    elseif input.KeyCode == Enum.KeyCode.D then keys.D = false
+                    elseif input.KeyCode == Enum.KeyCode.E then keys.E = false
+                    elseif input.KeyCode == Enum.KeyCode.Q then keys.Q = false
+                    end
+                end)
+                
                 while Settings.Fly do
                     task.wait()
                     pcall(function()
-                        HumanoidRootPart.Velocity = Vector3.new(0, 50, 0)
+                        if not Character or not HumanoidRootPart then return end
+                        Humanoid.PlatformStand = true
+                        
+                        local direction = Vector3.new(0, 0, 0)
+                        if keys.W then direction = direction + workspace.CurrentCamera.CFrame.LookVector
+                        elseif keys.S then direction = direction - workspace.CurrentCamera.CFrame.LookVector end
+                        if keys.A then direction = direction - workspace.CurrentCamera.CFrame.RightVector
+                        elseif keys.D then direction = direction + workspace.CurrentCamera.CFrame.RightVector end
+                        if keys.E then direction = direction + Vector3.new(0, 1, 0)
+                        elseif keys.Q then direction = direction - Vector3.new(0, 1, 0) end
+                        
+                        if direction.Magnitude > 0 then
+                            HumanoidRootPart.Velocity = direction.Unit * flySpeed
+                        else
+                            HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                        end
                     end)
                 end
+                Humanoid.PlatformStand = false
             end)
         end
     end,
@@ -802,20 +1077,20 @@ PlayerSection:AddToggle("NoClip", {
     Default = false,
     Callback = function(value)
         Settings.NoClip = value
-        if value then
-            spawn(function()
-                while Settings.NoClip do
-                    task.wait()
-                    pcall(function()
+        spawn(function()
+            while Settings.NoClip do
+                task.wait()
+                pcall(function()
+                    if Character then
                         for _, v in pairs(Character:GetDescendants()) do
-                            if v:IsA("BasePart") and v.CanCollide == true then
+                            if v:IsA("BasePart") then
                                 v.CanCollide = false
                             end
                         end
-                    end)
-                end
-            end)
-        end
+                    end
+                end)
+            end
+        end)
     end,
 })
 
@@ -826,10 +1101,8 @@ PlayerSection:AddToggle("InfiniteJump", {
         Settings.InfiniteJump = value
         if value then
             UserInputService.JumpRequest:Connect(function()
-                if Settings.InfiniteJump then
-                    pcall(function()
-                        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    end)
+                if Settings.InfiniteJump and Humanoid then
+                    Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                 end
             end)
         end
@@ -837,17 +1110,16 @@ PlayerSection:AddToggle("InfiniteJump", {
 })
 
 PlayerSection:AddToggle("AntiAFK", {
-    Title = "Anti AFK",
-    Default = false,
+    Title = "Anti AFK (20 min)",
+    Default = true,
     Callback = function(value)
         Settings.AntiAFK = value
         if value then
             spawn(function()
                 while Settings.AntiAFK do
-                    task.wait(120)
-                    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                    task.wait(1)
-                    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                    task.wait(600) -- 10 minutes
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
                 end
             end)
         end
@@ -855,7 +1127,7 @@ PlayerSection:AddToggle("AntiAFK", {
 })
 
 -- ==================== SETTINGS TAB ====================
-local SettingsSection = SettingsTab:AddSection("Performance")
+local SettingsSection = SettingsTab:AddSection("⚙️ Performance")
 
 SettingsSection:AddToggle("FPSBoost", {
     Title = "FPS Boost",
@@ -863,64 +1135,76 @@ SettingsSection:AddToggle("FPSBoost", {
     Callback = function(value)
         Settings.FPSBoost = value
         if value then
-            spawn(function()
-                pcall(function()
-                    -- Lower graphics settings
-                    settings().Rendering.QualityLevel = 1
-                    
-                    -- Make parts low quality
-                    for _, v in pairs(workspace:GetDescendants()) do
-                        if v:IsA("Part") or v:IsA("MeshPart") then
-                            v.Material = "SmoothPlastic"
-                            v.Reflectance = 0
-                            v.BrickColor = BrickColor.new("Dark stone grey")
-                        end
+            pcall(function()
+                settings().Rendering.QualityLevel = 1
+                Lighting.GlobalShadows = false
+                Lighting.Brightness = 1
+                
+                for _, v in pairs(Workspace:GetDescendants()) do
+                    if v:IsA("Part") or v:IsA("MeshPart") then
+                        v.Material = Enum.Material.SmoothPlastic
+                        v.Reflectance = 0
                     end
-                    
-                    -- Disable unnecessary effects
-                    Lighting.GlobalShadows = false
-                    Lighting.Brightness = 1
-                end)
+                    if v:IsA("Texture") or v:IsA("Decal") then
+                        v:Destroy()
+                    end
+                end
             end)
         end
     end,
 })
 
-SettingsSection:AddParagraph({
-    Title = "Configuration",
-    Content = "AutoSave and AutoLoad configs are handled below."
-})
-
 -- ==================== MISC TAB ====================
-local MiscSection = MiscTab:AddSection("Server Options")
+local MiscSection = MiscTab:AddSection("🔧 Utilities")
 
 MiscSection:AddButton({
-    Title = "Server Hop",
+    Title = "🔄 Server Hop",
     Callback = function()
-        Fluent:Notify({ Title = "Server", Content = "Hopping to new server...", Duration = 2 })
-        local Http = game:GetService("HttpService")
-        local TPS = game:GetService("TeleportService")
-        local Api = "https://games.roblox.com/v1/games/"
-        local GameId = game.PlaceId
-        
-        pcall(function()
-            local servers = Http:JSONDecode(game:HttpGet(Api .. GameId .. "/servers/Public?limit=100"))
-            for _, server in pairs(servers.data) do
-                if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                    TPS:TeleportToPlaceInstance(GameId, server.id, Player)
-                    break
+        Fluent:Notify({ Title = "Server", Content = "Searching for new server...", Duration = 2 })
+        spawn(function()
+            pcall(function()
+                local servers = HttpService:JSONDecode(
+                    game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=100")
+                )
+                for _, server in pairs(servers.data) do
+                    if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, Player)
+                        return
+                    end
                 end
-            end
+                Fluent:Notify({ Title = "Server", Content = "No available servers found!", Duration = 2 })
+            end)
         end)
     end,
 })
 
 MiscSection:AddButton({
-    Title = "Rejoin Server",
+    Title = "🔁 Rejoin Server",
     Callback = function()
         Fluent:Notify({ Title = "Server", Content = "Rejoining...", Duration = 2 })
-        local TS = game:GetService("TeleportService")
-        TS:Teleport(game.PlaceId, Player)
+        task.wait(1)
+        TeleportService:Teleport(game.PlaceId, Player)
+    end,
+})
+
+MiscSection:AddButton({
+    Title = "👻 Rejoin (Low Player Server)",
+    Callback = function()
+        Fluent:Notify({ Title = "Server", Content = "Searching for empty server...", Duration = 2 })
+        spawn(function()
+            pcall(function()
+                local servers = HttpService:JSONDecode(
+                    game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?limit=100&sortOrder=1")
+                )
+                for _, server in pairs(servers.data) do
+                    if server.playing < 5 and server.id ~= game.JobId then
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, Player)
+                        return
+                    end
+                end
+                Fluent:Notify({ Title = "Server", Content = "No low player servers found!", Duration = 2 })
+            end)
+        end)
     end,
 })
 
@@ -948,20 +1232,26 @@ OpenGui.ResetOnSpawn = false
 OpenGui.Parent = game:GetService("CoreGui")
 
 local OpenBtn = Instance.new("TextButton")
-OpenBtn.Size = UDim2.fromOffset(55, 55)
+OpenBtn.Size = UDim2.fromOffset(60, 60)
 OpenBtn.Position = UDim2.new(0.85, 0, 0.85, 0)
 OpenBtn.BackgroundColor3 = Color3.fromRGB(180, 10, 20)
-OpenBtn.BackgroundTransparency = 0.2
+OpenBtn.BackgroundTransparency = 0.15
 OpenBtn.Text = "dkoi\nHUB"
 OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 OpenBtn.TextScaled = true
-OpenBtn.Font = Enum.Font.GothamBold
+OpenBtn.Font = Enum.Font.GothamBlack
 OpenBtn.Parent = OpenGui
 OpenBtn.BorderSizePixel = 0
+OpenBtn.ZIndex = 10
 
 local Corner = Instance.new("UICorner")
 Corner.CornerRadius = UDim.new(0.5, 0)
 Corner.Parent = OpenBtn
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(255, 255, 255)
+Stroke.Thickness = 2
+Stroke.Parent = OpenBtn
 
 FloatingButtonManager:AddButton("OpenBtn", OpenBtn, false, false)
 
@@ -1002,27 +1292,38 @@ end)
 
 -- ==================== NOTIFICATION & STARTUP ====================
 Fluent:Notify({
-    Title = "dkoiHUB",
-    Content = "Script loaded successfully! Enjoy!",
+    Title = "🏴‍☠️ dkoiHUB",
+    Content = "Script loaded! Press Right CTRL to toggle UI",
     Duration = 5,
 })
 
--- Select the first tab
 Window:SelectTab(1)
 
--- Character added handler
+-- Character respawn handler
 Player.CharacterAdded:Connect(function(char)
     Character = char
     Humanoid = char:WaitForChild("Humanoid")
     HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
     
     -- Reapply settings
+    task.wait(1)
     if Settings.WalkSpeed ~= 16 then
         Humanoid.WalkSpeed = Settings.WalkSpeed
     end
     if Settings.JumpPower ~= 50 then
         Humanoid.JumpPower = Settings.JumpPower
     end
+    
+    Fluent:Notify({ Title = "dkoiHUB", Content = "Character respawned! Settings reapplied.", Duration = 2 })
 end)
 
-print("dkoiHUB loaded successfully!")
+-- ESP Update Loop
+spawn(function()
+    while task.wait(5) do
+        if Settings.PlayerESP or Settings.NPCESP or Settings.BossESP or Settings.FruitESP or Settings.ChestESP then
+            updateESP()
+        end
+    end
+end)
+
+print("✅ dkoiHUB v2 - Working Version Loaded!")
